@@ -215,6 +215,11 @@
           // 已配置：始终显示推送区域（开关）
           webhookArea.classList.remove('hidden')
           statusEl.textContent = `已配置`
+          // 已配置时默认启用（除非用户明确关闭过）
+          if (localStorage.getItem('notify_enabled') === null) {
+            notifyEnabled = true
+            localStorage.setItem('notify_enabled', 'true')
+          }
           toggleEl.checked = notifyEnabled
         } else {
           // 未配置
