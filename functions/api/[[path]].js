@@ -2,6 +2,7 @@
 const AUTH_KEY = "AUTH_CONFIG";
 const DATA_KEY = "USER_DATA";
 const TOKEN_KEY = "AUTH_TOKENS";
+const WECHAT_WEBHOOK_KEY = "WECHAT_WEBHOOK";  // 企业微信Webhook密钥
 
 // 生成简单 token
 function generateToken() {
@@ -64,7 +65,7 @@ export async function onRequest(context) {
     try {
       const { username, password } = await request.json();
       const config = JSON.parse(await env.MY_KV.get(AUTH_KEY));
-      
+
       if (username === config.username && password === config.password) {
         const token = generateToken();
         await saveToken(env, token);
@@ -109,7 +110,7 @@ export async function onRequest(context) {
   if (url.pathname === "/api" && request.method === "POST") {
     const token = request.headers.get("Authorization")?.replace("Bearer ", "");
     const isValid = await verifyToken(env, token);
-    
+
     if (!isValid) {
       return new Response(JSON.stringify({ success: false, message: "请先登录" }), {
         status: 401,
@@ -120,6 +121,97 @@ export async function onRequest(context) {
     try {
       const data = await request.text();
       await env.MY_KV.put(DATA_KEY, data);
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ success: false, message: e.message }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+  }
+
+  // 推送接口 - 发送点名结果到企业微信
+  if (url.pathname === "/api/notify" && request.method === "POST") {
+    try {
+      const { name, time } = await request.json();
+      const webhookKey = await env.MY_KV.get(WECHAT_WEBHOOK_KEY);
+
+      if (!webhookKey) {
+        return new Response(JSON.stringify({ success: false, message: "未配置企业微信Webhook" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      // 调用企业微信Webhook
+      const webhookUrl = `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=${webhookKey}`;
+      const wxRes = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          msgtype: 'text',
+          text: {
+            content: `🎯 抽查结果\n姓名: ${name}\n时间: ${time}`
+          }
+        })
+      });
+
+      const wxData = await wxRes.json();
+
+      if (wxData.errcode === 0) {
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      } else {
+        return new Response(JSON.stringify({ success: false, message: wxData.errmsg }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+    } catch (e) {
+      return new Response(JSON.stringify({ success: false, message: e.message }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+  }
+
+  // 获取推送配置状态
+  if (url.pathname === "/api/webhook/status" && request.method === "GET") {
+    const webhookKey = await env.MY_KV.get(WECHAT_WEBHOOK_KEY);
+    return new Response(JSON.stringify({
+      configured: !!webhookKey,
+      // 只返回密钥前几位用于确认
+      keyPreview: webhookKey ? webhookKey.substring(0, 8) + '...' : null
+    }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+
+  // 设置Webhook密钥（需要登录）
+  if (url.pathname === "/api/webhook/config" && request.method === "POST") {
+    const token = request.headers.get("Authorization")?.replace("Bearer ", "");
+    const isValid = await verifyToken(env, token);
+
+    if (!isValid) {
+      return new Response(JSON.stringify({ success: false, message: "请先登录" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    try {
+      const { webhookKey } = await request.json();
+      if (webhookKey) {
+        await env.MY_KV.put(WECHAT_WEBHOOK_KEY, webhookKey);
+      } else {
+        await env.MY_KV.delete(WECHAT_WEBHOOK_KEY);
+      }
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
