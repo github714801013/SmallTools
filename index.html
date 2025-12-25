@@ -430,6 +430,10 @@
     }
 
     function pick() {
+      if (!authToken) {
+        alert('请先登录后再抽查')
+        return
+      }
       if (!state.users.length) return
       const user = weightedPick(state.users)
       if (!user) return
