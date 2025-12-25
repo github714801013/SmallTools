@@ -43,30 +43,34 @@
     <div id="editArea" class="space-y-2 opacity-50">
       <textarea id="input" class="w-full border rounded-lg p-2 text-sm" rows="4"
         placeholder="每行一个名字（相同名字会覆盖更新）"></textarea>
+    </div>
 
-      <!-- 企业微信推送配置 -->
-      <div id="webhookArea" class="space-y-2 p-3 bg-green-50 rounded-lg hidden">
-        <div class="flex justify-between items-center">
-          <span class="text-sm font-medium text-green-700">📢 企业微信推送</span>
-          <label class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" id="notifyToggle" class="sr-only peer" onchange="toggleNotify()">
-            <div
-              class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500">
-            </div>
-          </label>
+    <!-- 企业微信推送（独立区域，已配置时始终显示开关） -->
+    <div id="webhookArea" class="hidden">
+      <div class="flex justify-between items-center p-2 bg-green-50 rounded-lg">
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-green-700">📢 推送</span>
+          <span id="webhookStatus" class="text-xs text-green-600"></span>
         </div>
-        <div id="webhookStatus" class="text-xs text-green-600"></div>
-        <div id="webhookConfig" class="hidden space-y-2">
-          <input id="webhookKeyInput" type="text" placeholder="输入Webhook密钥 (key=后面的部分)"
-            class="w-full border rounded-lg p-2 text-sm" />
-          <div class="flex gap-2">
-            <button onclick="saveWebhookKey()"
-              class="flex-1 bg-green-500 text-white py-1.5 rounded-lg text-sm">保存</button>
-            <button onclick="clearWebhookKey()"
-              class="flex-1 bg-gray-300 text-gray-700 py-1.5 rounded-lg text-sm">清除</button>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" id="notifyToggle" class="sr-only peer" onchange="toggleNotify()">
+          <div
+            class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500">
           </div>
+        </label>
+      </div>
+      <!-- 配置区域（仅登录后显示） -->
+      <div id="webhookConfig" class="hidden mt-2 p-2 bg-gray-50 rounded-lg space-y-2">
+        <div class="flex gap-2">
+          <input id="webhookKeyInput" type="text" placeholder="Webhook密钥" class="flex-1 border rounded p-1.5 text-xs" />
+          <button onclick="saveWebhookKey()" class="px-3 bg-green-500 text-white rounded text-xs">保存</button>
+          <button onclick="clearWebhookKey()" class="px-2 bg-gray-300 text-gray-600 rounded text-xs">清</button>
         </div>
       </div>
+    </div>
+
+    <!-- 批量操作按钮（需要登录） -->
+    <div id="editBtns" class="space-y-2 opacity-50">
       <button onclick="importNames()" class="w-full bg-gray-200 py-2 rounded-lg disabled:cursor-not-allowed">
         ➕ 导入名单
       </button>
@@ -88,8 +92,14 @@
       </div>
     </div>
 
-    <!-- 名单列表 -->
-    <ul id="list" class="text-sm space-y-1"></ul>
+    <!-- 名单列表（可折叠） -->
+    <div class="space-y-1">
+      <button onclick="toggleList()" class="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
+        <span id="listToggleIcon">▶</span>
+        <span>待抽查名单 (<span id="listCount">0</span>人)</span>
+      </button>
+      <ul id="list" class="text-sm space-y-1 hidden"></ul>
+    </div>
   </div>
 
   <script>
@@ -124,21 +134,28 @@
       const loginStatus = document.getElementById('loginStatus')
       const authBtn = document.getElementById('authBtn')
       const editArea = document.getElementById('editArea')
+      const editBtns = document.getElementById('editBtns')
+      const webhookConfig = document.getElementById('webhookConfig')
 
       if (loggedIn) {
         loginStatus.textContent = '已登录 ✅'
         loginStatus.className = 'text-green-600'
         authBtn.textContent = '退出'
-        editArea.classList.remove('opacity-50')
+        editArea.classList.remove('hidden')
+        editBtns.classList.remove('hidden')
+        editBtns.classList.remove('opacity-50')
+        webhookConfig.classList.remove('hidden')
         document.getElementById('loginForm').classList.add('hidden')
-        document.getElementById('webhookArea').classList.remove('hidden')
         checkWebhookStatus()
       } else {
         loginStatus.textContent = '未登录'
         loginStatus.className = 'text-gray-500'
         authBtn.textContent = '登录'
-        editArea.classList.add('opacity-50')
-        document.getElementById('webhookArea').classList.add('hidden')
+        editArea.classList.add('hidden')
+        editBtns.classList.add('hidden')
+        webhookConfig.classList.add('hidden')
+        // 未登录时也检查推送状态，已配置则显示开关
+        checkWebhookStatus()
       }
     }
 
@@ -190,22 +207,26 @@
       try {
         const res = await fetch('/api/webhook/status')
         const data = await res.json()
+        const webhookArea = document.getElementById('webhookArea')
         const statusEl = document.getElementById('webhookStatus')
-        const configEl = document.getElementById('webhookConfig')
         const toggleEl = document.getElementById('notifyToggle')
 
         if (data.configured) {
-          statusEl.textContent = `已配置 (${data.keyPreview})`
+          // 已配置：始终显示推送区域（开关）
+          webhookArea.classList.remove('hidden')
+          statusEl.textContent = `已配置`
           toggleEl.checked = notifyEnabled
         } else {
-          statusEl.textContent = '未配置Webhook密钥'
+          // 未配置
+          statusEl.textContent = '未配置'
           toggleEl.checked = false
           notifyEnabled = false
-        }
-
-        // 登录后显示配置区域
-        if (authToken) {
-          configEl.classList.remove('hidden')
+          // 未登录且未配置时隐藏整个区域
+          if (!authToken) {
+            webhookArea.classList.add('hidden')
+          } else {
+            webhookArea.classList.remove('hidden')
+          }
         }
       } catch (e) {
         console.warn('获取Webhook状态失败:', e)
@@ -466,9 +487,26 @@
 
     /* ---------- UI ---------- */
 
+    function toggleList() {
+      const listEl = document.getElementById('list')
+      const iconEl = document.getElementById('listToggleIcon')
+      if (listEl.classList.contains('hidden')) {
+        listEl.classList.remove('hidden')
+        iconEl.textContent = '▼'
+      } else {
+        listEl.classList.add('hidden')
+        iconEl.textContent = '▶'
+      }
+    }
+
     function render() {
       const isLoggedIn = !!authToken
-      list.innerHTML = ''
+      const listEl = document.getElementById('list')
+      listEl.innerHTML = ''
+
+      // 更新人数显示
+      document.getElementById('listCount').textContent = state.users.length
+
       state.users.forEach(u => {
         const li = document.createElement('li')
         li.className = 'flex justify-between items-center text-gray-700'
@@ -488,7 +526,7 @@
         ` : ''}
       </div>
     `
-        list.appendChild(li)
+        listEl.appendChild(li)
       })
     }
 
