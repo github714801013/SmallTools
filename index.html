@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>H5 点名工具</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+
+<div class="w-full max-w-md bg-white rounded-2xl shadow-lg p-6 space-y-4">
+  <h1 class="text-xl font-bold text-center">📋 随机点名</h1>
+
+  <!-- 显示结果 -->
+  <div id="result"
+       class="text-center text-3xl font-bold text-blue-600 h-16 flex items-center justify-center">
+    —
+  </div>
+
+  <!-- 点名按钮 -->
+  <button onclick="pick()"
+          class="w-full bg-blue-600 text-white py-3 rounded-xl text-lg active:scale-95 transition">
+    🎯 点名
+  </button>
+
+  <!-- 批量录入 -->
+  <textarea id="input"
+            class="w-full border rounded-lg p-2 text-sm"
+            rows="4"
+            placeholder="每行一个名字"></textarea>
+
+  <button onclick="importNames()"
+          class="w-full bg-gray-200 py-2 rounded-lg">
+    ➕ 导入名单
+  </button>
+  <button onclick="clearAll()"
+        class="w-full bg-red-500 text-white py-2 rounded-lg active:scale-95 transition">
+  🗑 清空全部名单
+  </button>
+
+
+  <!-- 名单列表 -->
+  <ul id="list" class="text-sm space-y-1"></ul>
+</div>
+
+<script>
+const API = '/api'
+const BASE = 0.7
+let state = {
+  users: []
+}
+
+/* ---------- 工具函数 ---------- */
+
+function calcWeight(hitCount) {
+  return Math.pow(BASE, hitCount)
+}
+
+function weightedPick(users) {
+  const pool = users.filter(u => !u.disabled)
+  const total = pool.reduce((s, u) => s + u.weight, 0)
+  let r = Math.random() * total
+  for (const u of pool) {
+    if (r < u.weight) return u
+    r -= u.weight
+  }
+}
+
+/* ---------- 数据同步 ---------- */
+
+async function load() {
+  const res = await fetch(API)
+  const data = await res.json()
+  if (data) {
+    state = data
+  }
+  render()
+}
+
+async function sync() {
+  await fetch(API, {
+    method: 'POST',
+    body: JSON.stringify(state)
+  })
+}
+
+/* ---------- 业务逻辑 ---------- */
+
+function importNames() {
+  const lines = input.value.split('\n').map(s => s.trim()).filter(Boolean)
+
+  lines.forEach(line => {
+    const [name, count] = line.split(/[,，]/)
+    const hitCount = Number(count) || 0
+
+    state.users.push({
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      hitCount,
+      weight: calcWeight(hitCount),
+      disabled: false
+    })
+  })
+
+  input.value = ''
+  sync()
+  render()
+}
+
+
+function pick() {
+  if (!state.users.length) return
+  const user = weightedPick(state.users)
+  if (!user) return
+
+  user.hitCount++
+  user.weight = calcWeight(user.hitCount)
+
+  result.textContent = user.name
+  sync()
+  render()
+}
+
+function removeUser(id) {
+  if (!confirm('确定删除这个人吗？')) return
+  state.users = state.users.filter(u => u.id !== id)
+  sync()
+  render()
+}
+
+function clearAll() {
+  if (!confirm('确定要删除全部名单吗？此操作不可恢复')) return
+  state.users = []
+  result.textContent = '—'
+  sync()
+  render()
+}
+
+
+/* ---------- UI ---------- */
+
+function render() {
+  list.innerHTML = ''
+  state.users.forEach(u => {
+    const li = document.createElement('li')
+    li.className = 'flex justify-between items-center text-gray-700'
+
+    li.innerHTML = `
+      <span>${u.name}</span>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-gray-400">
+          ${u.hitCount}次
+        </span>
+        <button
+          onclick="removeUser('${u.id}')"
+          class="text-red-500 text-sm active:scale-90">
+          ❌
+        </button>
+      </div>
+    `
+    list.appendChild(li)
+  })
+}
+
+/* ---------- 启动 ---------- */
+load()
+</script>
+
+</body>
+</html>
