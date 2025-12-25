@@ -39,13 +39,38 @@
       🎯 开始抽查
     </button>
 
-    <!-- 批量录入（需要登录） -->
-    <div id="editArea" class="space-y-2 opacity-50">
-      <textarea id="input" class="w-full border rounded-lg p-2 text-sm" rows="4"
+    <!-- 管理按钮（登录后显示） -->
+    <button id="manageBtn" onclick="toggleManage()"
+      class="hidden w-full py-2 text-sm text-gray-500 border border-dashed rounded-lg hover:bg-gray-50">
+      ⚙️ 管理
+    </button>
+
+    <!-- 管理面板（默认隐藏） -->
+    <div id="managePanel" class="hidden space-y-2 p-3 bg-gray-50 rounded-lg">
+      <!-- 批量录入 -->
+      <textarea id="input" class="w-full border rounded-lg p-2 text-sm bg-white" rows="3"
         placeholder="每行一个名字（相同名字会覆盖更新）"></textarea>
+
+      <div class="flex gap-2">
+        <button onclick="importNames()" class="flex-1 bg-gray-200 py-2 rounded-lg text-sm">
+          ➕ 导入
+        </button>
+        <button onclick="clearAll()" class="flex-1 bg-red-500 text-white py-2 rounded-lg text-sm">
+          🗑 清空
+        </button>
+      </div>
+
+      <!-- Webhook配置 -->
+      <div id="webhookConfig" class="hidden p-2 bg-white rounded-lg">
+        <div class="flex gap-2">
+          <input id="webhookKeyInput" type="text" placeholder="Webhook密钥" class="flex-1 border rounded p-1.5 text-xs" />
+          <button onclick="saveWebhookKey()" class="px-3 bg-green-500 text-white rounded text-xs">存</button>
+          <button onclick="clearWebhookKey()" class="px-2 bg-gray-300 text-gray-600 rounded text-xs">清</button>
+        </div>
+      </div>
     </div>
 
-    <!-- 企业微信推送（独立区域，已配置时始终显示开关） -->
+    <!-- 企业微信推送开关（已配置时显示在外面） -->
     <div id="webhookArea" class="hidden">
       <div class="flex justify-between items-center p-2 bg-green-50 rounded-lg">
         <div class="flex items-center gap-2">
@@ -59,25 +84,6 @@
           </div>
         </label>
       </div>
-      <!-- 配置区域（仅登录后显示） -->
-      <div id="webhookConfig" class="hidden mt-2 p-2 bg-gray-50 rounded-lg space-y-2">
-        <div class="flex gap-2">
-          <input id="webhookKeyInput" type="text" placeholder="Webhook密钥" class="flex-1 border rounded p-1.5 text-xs" />
-          <button onclick="saveWebhookKey()" class="px-3 bg-green-500 text-white rounded text-xs">保存</button>
-          <button onclick="clearWebhookKey()" class="px-2 bg-gray-300 text-gray-600 rounded text-xs">清</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 批量操作按钮（需要登录） -->
-    <div id="editBtns" class="space-y-2 opacity-50">
-      <button onclick="importNames()" class="w-full bg-gray-200 py-2 rounded-lg disabled:cursor-not-allowed">
-        ➕ 导入名单
-      </button>
-      <button onclick="clearAll()"
-        class="w-full bg-red-500 text-white py-2 rounded-lg active:scale-95 transition disabled:opacity-50">
-        🗑 清空全部名单
-      </button>
     </div>
 
     <!-- 当次抽查历史 -->
@@ -133,17 +139,15 @@
     function updateAuthUI(loggedIn) {
       const loginStatus = document.getElementById('loginStatus')
       const authBtn = document.getElementById('authBtn')
-      const editArea = document.getElementById('editArea')
-      const editBtns = document.getElementById('editBtns')
+      const manageBtn = document.getElementById('manageBtn')
+      const managePanel = document.getElementById('managePanel')
       const webhookConfig = document.getElementById('webhookConfig')
 
       if (loggedIn) {
         loginStatus.textContent = '已登录 ✅'
         loginStatus.className = 'text-green-600'
         authBtn.textContent = '退出'
-        editArea.classList.remove('hidden')
-        editBtns.classList.remove('hidden')
-        editBtns.classList.remove('opacity-50')
+        manageBtn.classList.remove('hidden')
         webhookConfig.classList.remove('hidden')
         document.getElementById('loginForm').classList.add('hidden')
         checkWebhookStatus()
@@ -151,11 +155,25 @@
         loginStatus.textContent = '未登录'
         loginStatus.className = 'text-gray-500'
         authBtn.textContent = '登录'
-        editArea.classList.add('hidden')
-        editBtns.classList.add('hidden')
+        manageBtn.classList.add('hidden')
+        managePanel.classList.add('hidden')
         webhookConfig.classList.add('hidden')
         // 未登录时也检查推送状态，已配置则显示开关
         checkWebhookStatus()
+      }
+      // 重新渲染列表以更新删除按钮显示
+      render()
+    }
+
+    function toggleManage() {
+      const panel = document.getElementById('managePanel')
+      const btn = document.getElementById('manageBtn')
+      if (panel.classList.contains('hidden')) {
+        panel.classList.remove('hidden')
+        btn.textContent = '⚙️ 收起管理'
+      } else {
+        panel.classList.add('hidden')
+        btn.textContent = '⚙️ 管理'
       }
     }
 
