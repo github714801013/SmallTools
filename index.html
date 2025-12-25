@@ -11,6 +11,25 @@
 <div class="w-full max-w-md bg-white rounded-2xl shadow-lg p-6 space-y-4">
   <h1 class="text-xl font-bold text-center">📋 随机点名</h1>
 
+  <!-- 登录状态显示 -->
+  <div id="authStatus" class="text-center text-sm">
+    <span id="loginStatus" class="text-gray-500">未登录</span>
+    <button id="authBtn" onclick="toggleAuth()" class="ml-2 text-blue-500 underline">登录</button>
+  </div>
+
+  <!-- 登录表单（默认隐藏） -->
+  <div id="loginForm" class="hidden space-y-2 p-4 bg-gray-50 rounded-lg">
+    <input id="username" type="text" placeholder="账号" 
+           class="w-full border rounded-lg p-2 text-sm" />
+    <input id="password" type="password" placeholder="密码" 
+           class="w-full border rounded-lg p-2 text-sm" />
+    <button onclick="login()" 
+            class="w-full bg-green-500 text-white py-2 rounded-lg active:scale-95 transition">
+      🔐 登录
+    </button>
+    <p id="loginError" class="text-red-500 text-xs text-center hidden"></p>
+  </div>
+
   <!-- 显示结果 -->
   <div id="result"
        class="text-center text-3xl font-bold text-blue-600 h-16 flex items-center justify-center">
@@ -23,21 +42,22 @@
     🎯 开始
   </button>
 
-  <!-- 批量录入 -->
-  <textarea id="input"
-            class="w-full border rounded-lg p-2 text-sm"
-            rows="4"
-            placeholder="每行一个名字"></textarea>
+  <!-- 批量录入（需要登录） -->
+  <div id="editArea" class="space-y-2 opacity-50">
+    <textarea id="input"
+              class="w-full border rounded-lg p-2 text-sm"
+              rows="4"
+              placeholder="每行一个名字（相同名字会覆盖更新）"></textarea>
 
-  <button onclick="importNames()"
-          class="w-full bg-gray-200 py-2 rounded-lg">
-    ➕ 导入名单
-  </button>
-  <button onclick="clearAll()"
-        class="w-full bg-red-500 text-white py-2 rounded-lg active:scale-95 transition">
-  🗑 清空全部名单
-  </button>
-
+    <button onclick="importNames()"
+            class="w-full bg-gray-200 py-2 rounded-lg disabled:cursor-not-allowed">
+      ➕ 导入名单
+    </button>
+    <button onclick="clearAll()"
+          class="w-full bg-red-500 text-white py-2 rounded-lg active:scale-95 transition disabled:opacity-50">
+      🗑 清空全部名单
+    </button>
+  </div>
 
   <!-- 名单列表 -->
   <ul id="list" class="text-sm space-y-1"></ul>
@@ -46,8 +66,88 @@
 <script>
 const API = '/api'
 const BASE = 0.4
-let state = {
-  users: []
+let state = { users: [] }
+let authToken = localStorage.getItem('auth_token') || ''
+
+/* ---------- 认证相关 ---------- */
+
+async function checkAuth() {
+  if (!authToken) {
+    updateAuthUI(false)
+    return false
+  }
+  try {
+    const res = await fetch('/api/check', {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    })
+    const data = await res.json()
+    updateAuthUI(data.loggedIn)
+    return data.loggedIn
+  } catch (e) {
+    updateAuthUI(false)
+    return false
+  }
+}
+
+function updateAuthUI(loggedIn) {
+  const loginStatus = document.getElementById('loginStatus')
+  const authBtn = document.getElementById('authBtn')
+  const editArea = document.getElementById('editArea')
+  
+  if (loggedIn) {
+    loginStatus.textContent = '已登录 ✅'
+    loginStatus.className = 'text-green-600'
+    authBtn.textContent = '退出'
+    editArea.classList.remove('opacity-50')
+    document.getElementById('loginForm').classList.add('hidden')
+  } else {
+    loginStatus.textContent = '未登录'
+    loginStatus.className = 'text-gray-500'
+    authBtn.textContent = '登录'
+    editArea.classList.add('opacity-50')
+  }
+}
+
+function toggleAuth() {
+  if (authToken) {
+    // 退出登录
+    authToken = ''
+    localStorage.removeItem('auth_token')
+    updateAuthUI(false)
+  } else {
+    // 显示登录表单
+    document.getElementById('loginForm').classList.toggle('hidden')
+  }
+}
+
+async function login() {
+  const username = document.getElementById('username').value
+  const password = document.getElementById('password').value
+  const errorEl = document.getElementById('loginError')
+  
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    })
+    const data = await res.json()
+    
+    if (data.success) {
+      authToken = data.token
+      localStorage.setItem('auth_token', authToken)
+      updateAuthUI(true)
+      errorEl.classList.add('hidden')
+      document.getElementById('username').value = ''
+      document.getElementById('password').value = ''
+    } else {
+      errorEl.textContent = data.message || '登录失败'
+      errorEl.classList.remove('hidden')
+    }
+  } catch (e) {
+    errorEl.textContent = '网络错误'
+    errorEl.classList.remove('hidden')
+  }
 }
 
 /* ---------- 工具函数 ---------- */
@@ -68,8 +168,6 @@ function weightedPick(users) {
 
 /* ---------- 数据同步 ---------- */
 
-/* ---------- 增强版数据同步逻辑 ---------- */
-
 async function load() {
   // 1. 优先尝试从本地 localStorage 读取
   const localData = localStorage.getItem('pick_user_data');
@@ -84,10 +182,9 @@ async function load() {
     const res = await fetch(API);
     if (res.ok) {
       const serverData = await res.json();
-      // 如果服务器有数据且与本地不同（可根据需要增加更复杂的对比逻辑）
       if (serverData && serverData.users && serverData.users.length > 0) {
         state = serverData;
-        localStorage.setItem('pick_user_data', JSON.stringify(state)); // 同步到本地
+        localStorage.setItem('pick_user_data', JSON.stringify(state));
         render();
         console.log('从服务器同步完成');
       }
@@ -98,18 +195,32 @@ async function load() {
 }
 
 async function sync() {
-  // 1. 立即保存到本地，确保响应速度
+  // 1. 立即保存到本地
   localStorage.setItem('pick_user_data', JSON.stringify(state));
 
-  // 2. 异步发送到服务器备份
+  // 2. 异步发送到服务器备份（需要登录）
+  if (!authToken) {
+    console.warn('未登录，数据仅保存在本地');
+    return;
+  }
+  
   try {
     const res = await fetch(API, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
       },
       body: JSON.stringify(state)
     });
+    
+    if (res.status === 401) {
+      alert('登录已过期，请重新登录');
+      authToken = '';
+      localStorage.removeItem('auth_token');
+      updateAuthUI(false);
+      return;
+    }
     
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
@@ -117,33 +228,47 @@ async function sync() {
     console.log('远程备份成功');
   } catch (e) {
     console.error('远程同步失败，数据已保存在本地:', e);
-    // 这里可以增加一个 UI 提示，告知用户当前处于离线状态
   }
 }
 
 /* ---------- 业务逻辑 ---------- */
 
 function importNames() {
+  if (!authToken) {
+    alert('请先登录后再导入名单');
+    return;
+  }
+  
   const lines = input.value.split('\n').map(s => s.trim()).filter(Boolean)
 
   lines.forEach(line => {
     const [name, count] = line.split(/[,，]/)
+    const trimmedName = name.trim()
     const hitCount = Number(count) || 0
-
-    state.users.push({
-      id: crypto.randomUUID(),
-      name: name.trim(),
-      hitCount,
-      weight: calcWeight(hitCount),
-      disabled: false
-    })
+    
+    // 查找是否已存在相同名称
+    const existingIndex = state.users.findIndex(u => u.name === trimmedName)
+    
+    if (existingIndex >= 0) {
+      // 覆盖更新已存在的用户
+      state.users[existingIndex].hitCount = hitCount
+      state.users[existingIndex].weight = calcWeight(hitCount)
+    } else {
+      // 添加新用户
+      state.users.push({
+        id: crypto.randomUUID(),
+        name: trimmedName,
+        hitCount,
+        weight: calcWeight(hitCount),
+        disabled: false
+      })
+    }
   })
 
   input.value = ''
   sync()
   render()
 }
-
 
 function pick() {
   if (!state.users.length) return
@@ -154,11 +279,16 @@ function pick() {
   user.weight = calcWeight(user.hitCount)
 
   result.textContent = user.name
-  sync()
+  // 点名不需要登录，只保存本地
+  localStorage.setItem('pick_user_data', JSON.stringify(state));
   render()
 }
 
 function removeUser(id) {
+  if (!authToken) {
+    alert('请先登录后再删除');
+    return;
+  }
   if (!confirm('确定删除这个人吗？')) return
   state.users = state.users.filter(u => u.id !== id)
   sync()
@@ -166,6 +296,10 @@ function removeUser(id) {
 }
 
 function clearAll() {
+  if (!authToken) {
+    alert('请先登录后再清空');
+    return;
+  }
   if (!confirm('确定要删除全部名单吗？此操作不可恢复')) return
   state.users = []
   result.textContent = '—'
@@ -173,10 +307,10 @@ function clearAll() {
   render()
 }
 
-
 /* ---------- UI ---------- */
 
 function render() {
+  const isLoggedIn = !!authToken
   list.innerHTML = ''
   state.users.forEach(u => {
     const li = document.createElement('li')
@@ -188,11 +322,13 @@ function render() {
         <span class="text-xs text-gray-400">
           ${u.hitCount}次
         </span>
+        ${isLoggedIn ? `
         <button
           onclick="removeUser('${u.id}')"
           class="text-red-500 text-sm active:scale-90">
           ❌
         </button>
+        ` : ''}
       </div>
     `
     list.appendChild(li)
@@ -200,6 +336,7 @@ function render() {
 }
 
 /* ---------- 启动 ---------- */
+checkAuth()
 load()
 </script>
 
