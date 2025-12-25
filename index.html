@@ -68,20 +68,57 @@ function weightedPick(users) {
 
 /* ---------- 数据同步 ---------- */
 
+/* ---------- 增强版数据同步逻辑 ---------- */
+
 async function load() {
-  const res = await fetch(API)
-  const data = await res.json()
-  if (data) {
-    state = data
+  // 1. 优先尝试从本地 localStorage 读取
+  const localData = localStorage.getItem('pick_user_data');
+  if (localData) {
+    state = JSON.parse(localData);
+    console.log('从本地缓存加载成功');
+    render();
   }
-  render()
+
+  // 2. 无论本地是否有，都尝试从服务器获取最新数据以保持同步
+  try {
+    const res = await fetch(API);
+    if (res.ok) {
+      const serverData = await res.json();
+      // 如果服务器有数据且与本地不同（可根据需要增加更复杂的对比逻辑）
+      if (serverData && serverData.users && serverData.users.length > 0) {
+        state = serverData;
+        localStorage.setItem('pick_user_data', JSON.stringify(state)); // 同步到本地
+        render();
+        console.log('从服务器同步完成');
+      }
+    }
+  } catch (e) {
+    console.warn('远程加载失败，正在使用本地离线数据:', e);
+  }
 }
 
 async function sync() {
-  await fetch(API, {
-    method: 'POST',
-    body: JSON.stringify(state)
-  })
+  // 1. 立即保存到本地，确保响应速度
+  localStorage.setItem('pick_user_data', JSON.stringify(state));
+
+  // 2. 异步发送到服务器备份
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(state)
+    });
+    
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    console.log('远程备份成功');
+  } catch (e) {
+    console.error('远程同步失败，数据已保存在本地:', e);
+    // 这里可以增加一个 UI 提示，告知用户当前处于离线状态
+  }
 }
 
 /* ---------- 业务逻辑 ---------- */
