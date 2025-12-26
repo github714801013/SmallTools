@@ -100,10 +100,14 @@
 
     <!-- 名单列表（可折叠） -->
     <div class="space-y-1">
-      <button onclick="toggleList()" class="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
-        <span id="listToggleIcon">▶</span>
-        <span>待抽查名单 (<span id="listCount">0</span>人)</span>
-      </button>
+      <div class="flex items-center justify-between">
+        <button onclick="toggleList()" class="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
+          <span id="listToggleIcon">▶</span>
+          <span>待抽查名单 (<span id="listCount">0</span>人<span id="excludeCount" class="text-orange-500"></span>)</span>
+        </button>
+        <button onclick="clearExclude()" id="clearExcludeBtn"
+          class="hidden text-xs text-orange-500 hover:text-orange-700">清除排除</button>
+      </div>
       <ul id="list" class="text-sm space-y-1 hidden"></ul>
     </div>
   </div>
@@ -113,6 +117,7 @@
     const BASE = 0.4
     let state = { users: [] }
     let pickHistory = []  // 当次抽查历史
+    let excludedIds = new Set()  // 本次排除的人员ID
     let authToken = localStorage.getItem('auth_token') || ''
     let notifyEnabled = localStorage.getItem('notify_enabled') === 'true'  // 推送开关
 
@@ -334,7 +339,8 @@
     }
 
     function weightedPick(users) {
-      const pool = users.filter(u => !u.disabled)
+      // 过滤掉disabled和被排除的人员
+      const pool = users.filter(u => !u.disabled && !excludedIds.has(u.id))
       const total = pool.reduce((s, u) => s + u.weight, 0)
       let r = Math.random() * total
       for (const u of pool) {
@@ -531,12 +537,27 @@
       const listEl = document.getElementById('list')
       listEl.innerHTML = ''
 
+      // 计算排除数量
+      const excludeCount = excludedIds.size
+      const activeCount = state.users.length - excludeCount
+
       // 更新人数显示
-      document.getElementById('listCount').textContent = state.users.length
+      document.getElementById('listCount').textContent = activeCount
+      const excludeCountEl = document.getElementById('excludeCount')
+      const clearExcludeBtn = document.getElementById('clearExcludeBtn')
+
+      if (excludeCount > 0) {
+        excludeCountEl.textContent = `, 排除${excludeCount}人`
+        clearExcludeBtn.classList.remove('hidden')
+      } else {
+        excludeCountEl.textContent = ''
+        clearExcludeBtn.classList.add('hidden')
+      }
 
       state.users.forEach(u => {
+        const isExcluded = excludedIds.has(u.id)
         const li = document.createElement('li')
-        li.className = 'flex justify-between items-center text-gray-700'
+        li.className = `flex justify-between items-center ${isExcluded ? 'text-gray-400 line-through' : 'text-gray-700'}`
 
         li.innerHTML = `
       <span>${u.name}</span>
@@ -544,6 +565,12 @@
         <span class="text-xs text-gray-400">
           ${u.hitCount}次
         </span>
+        <button
+          onclick="toggleExclude('${u.id}')"
+          class="${isExcluded ? 'text-orange-500' : 'text-gray-400'} text-sm active:scale-90"
+          title="${isExcluded ? '恢复' : '排除'}">
+          ${isExcluded ? '🔄' : '🚫'}
+        </button>
         ${isLoggedIn ? `
         <button
           onclick="removeUser('${u.id}')"
@@ -555,6 +582,20 @@
     `
         listEl.appendChild(li)
       })
+    }
+
+    function toggleExclude(id) {
+      if (excludedIds.has(id)) {
+        excludedIds.delete(id)
+      } else {
+        excludedIds.add(id)
+      }
+      render()
+    }
+
+    function clearExclude() {
+      excludedIds.clear()
+      render()
     }
 
     /* ---------- 启动 ---------- */
