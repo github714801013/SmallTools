@@ -89,8 +89,9 @@
     <!-- 当次抽查历史 -->
     <div class="space-y-2">
       <div class="flex justify-between items-center">
-        <span class="text-sm font-medium text-gray-600">📝 本次抽查记录</span>
-        <button onclick="clearHistory()" class="text-xs text-gray-400 hover:text-red-500">清空</button>
+        <span class="text-sm font-medium text-gray-600">📝 本次抽查记录 <span id="pickedCount"
+            class="text-blue-500"></span></span>
+        <button onclick="resetPicked()" class="text-xs text-red-400 hover:text-red-600">重置抽查</button>
       </div>
       <div id="pickHistory"
         class="text-sm text-gray-500 bg-gray-50 rounded-lg p-2 min-h-[40px] max-h-[100px] overflow-y-auto">
@@ -118,6 +119,7 @@
     let state = { users: [] }
     let pickHistory = []  // 当次抽查历史
     let excludedIds = new Set()  // 本次排除的人员ID
+    let pickedIds = new Set(JSON.parse(localStorage.getItem('picked_ids') || '[]'))  // 已抽中的人员ID
     let authToken = localStorage.getItem('auth_token') || ''
     let notifyEnabled = localStorage.getItem('notify_enabled') === 'true'  // 推送开关
 
@@ -339,8 +341,8 @@
     }
 
     function weightedPick(users) {
-      // 过滤掉disabled和被排除的人员
-      const pool = users.filter(u => !u.disabled && !excludedIds.has(u.id))
+      // 过滤掉disabled、被排除和已抽中的人员
+      const pool = users.filter(u => !u.disabled && !excludedIds.has(u.id) && !pickedIds.has(u.id))
       const total = pool.reduce((s, u) => s + u.weight, 0)
       let r = Math.random() * total
       for (const u of pool) {
@@ -460,10 +462,17 @@
       }
       if (!state.users.length) return
       const user = weightedPick(state.users)
-      if (!user) return
+      if (!user) {
+        alert('所有人都已抽查过了')
+        return
+      }
 
       user.hitCount++
       user.weight = calcWeight(user.hitCount)
+
+      // 记录已抽中（保存到localStorage）
+      pickedIds.add(user.id)
+      localStorage.setItem('picked_ids', JSON.stringify([...pickedIds]))
 
       // 记录到当次历史
       const now = new Date()
@@ -479,13 +488,26 @@
       sendNotify(user.name, timeStr)
     }
 
-    function clearHistory() {
+    function resetPicked() {
+      if (!confirm('确定重置本次抽查吗？已抽中的记录将被清除')) return
       pickHistory = []
+      pickedIds.clear()
+      localStorage.removeItem('picked_ids')
       renderHistory()
+      render()
     }
 
     function renderHistory() {
       const historyEl = document.getElementById('pickHistory')
+      const pickedCountEl = document.getElementById('pickedCount')
+
+      // 显示已抽中数量
+      if (pickedIds.size > 0) {
+        pickedCountEl.textContent = `(已抽${pickedIds.size}人)`
+      } else {
+        pickedCountEl.textContent = ''
+      }
+
       if (pickHistory.length === 0) {
         historyEl.innerHTML = '<span class="text-gray-400">暂无记录</span>'
       } else {
@@ -556,11 +578,12 @@
 
       state.users.forEach(u => {
         const isExcluded = excludedIds.has(u.id)
+        const isPicked = pickedIds.has(u.id)
         const li = document.createElement('li')
-        li.className = `flex justify-between items-center ${isExcluded ? 'text-gray-400 line-through' : 'text-gray-700'}`
+        li.className = `flex justify-between items-center ${isExcluded ? 'text-gray-400 line-through' : isPicked ? 'text-green-600' : 'text-gray-700'}`
 
         li.innerHTML = `
-      <span>${u.name}</span>
+      <span>${isPicked ? '✓ ' : ''}${u.name}</span>
       <div class="flex items-center gap-1">
         ${isLoggedIn ? `
         <button onclick="adjustCount('${u.id}', -1)" class="text-gray-400 hover:text-blue-500 text-xs px-1">-</button>
@@ -617,6 +640,7 @@
     /* ---------- 启动 ---------- */
     checkAuth()
     load()
+    renderHistory()  // 显示已抽中数量
   </script>
 
 </body>
