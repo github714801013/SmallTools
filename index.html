@@ -471,8 +471,8 @@
       pickHistory.push({ name: user.name, time: timeStr })
 
       result.textContent = user.name
-      // 点名不需要登录，只保存本地
-      localStorage.setItem('pick_user_data', JSON.stringify(state));
+      // 同步到远端
+      sync()
       render()
       renderHistory()
       // 发送企业微信推送
@@ -561,10 +561,16 @@
 
         li.innerHTML = `
       <span>${u.name}</span>
-      <div class="flex items-center gap-2">
-        <span class="text-xs text-gray-400">
+      <div class="flex items-center gap-1">
+        ${isLoggedIn ? `
+        <button onclick="adjustCount('${u.id}', -1)" class="text-gray-400 hover:text-blue-500 text-xs px-1">-</button>
+        ` : ''}
+        <span class="text-xs text-gray-400 min-w-[24px] text-center">
           ${u.hitCount}次
         </span>
+        ${isLoggedIn ? `
+        <button onclick="adjustCount('${u.id}', 1)" class="text-gray-400 hover:text-blue-500 text-xs px-1">+</button>
+        ` : ''}
         <button
           onclick="toggleExclude('${u.id}')"
           class="${isExcluded ? 'text-orange-500' : 'text-gray-400'} text-sm active:scale-90"
@@ -596,6 +602,16 @@
     function clearExclude() {
       excludedIds.clear()
       render()
+    }
+
+    function adjustCount(id, delta) {
+      const user = state.users.find(u => u.id === id)
+      if (user) {
+        user.hitCount = Math.max(0, user.hitCount + delta)
+        user.weight = calcWeight(user.hitCount)
+        sync()
+        render()
+      }
     }
 
     /* ---------- 启动 ---------- */

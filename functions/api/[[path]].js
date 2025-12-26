@@ -133,10 +133,10 @@ export async function onRequest(context) {
     }
   }
 
-  // 推送接口 - 发送点名结果到企业微信
+  // 推送接口 - 发送抽查结果到企业微信
   if (url.pathname === "/api/notify" && request.method === "POST") {
     try {
-      const { name, time } = await request.json();
+      const { name } = await request.json();
       const webhookKey = await env.MY_KV.get(WECHAT_WEBHOOK_KEY);
 
       if (!webhookKey) {
@@ -154,7 +154,7 @@ export async function onRequest(context) {
         body: JSON.stringify({
           msgtype: 'text',
           text: {
-            content: `🎯 抽查结果\n姓名: ${name}\n时间: ${time}`
+            content: `🎯 ${name}`
           }
         })
       });
